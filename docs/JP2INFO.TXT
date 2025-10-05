@@ -1,0 +1,154 @@
+PDS_VERSION_ID         = PDS3            
+RECORD_TYPE            = STREAM                    
+OBJECT                 = TEXT
+  PUBLICATION_DATE     = 2005-06-10
+  INTERCHANGE_FORMAT   = ASCII
+  NOTE                 = "Description file referenced by HiRISE RDR JP2
+                          PDS labels"
+END_OBJECT             = TEXT
+END
+
+
+JPEG2000 Standard -
+
+RDR image data are stored in the JPEG2000 ISO/IEC Part 1 standard [1]
+format (http://www.jpeg.org/jpeg2000/), which was accepted as a PDS
+Standard in October 2005 [2, Appendix I]. The JPEG2000 standard offers
+benefits with distinct advantages for storage of and access to very large
+images. With HiRISE RDR products reaching sizes exceeding 30,000 x 70,000
+pixels the use of JPEG2000 was recognized as a suitable solution for the
+storage and distribution of these data products. Advantages include
+excellent compression performance, multiple resolution levels from a
+single image data set, progressive decompression quality layers, lossless
+and lossy compression (HiRISE RDR products use lossless compression per
+the PDS Standard), pixel datum precision up to 38 bits, multiple image
+components (or bands), and selective image area access. These features
+are achieved by the use of a sophisticated image coding system based on
+discrete wavelet transforms (DWT) combined with other coding techniques
+to generate a JPEG2000 codestream that can be rendered to image pixel
+rasters using inverse transform algorithms. 
+
+The PDS Standard specifies that a JPEG2000 codestream will be stored in a
+"JP2" file as described by the JPEG2000 Part 1 standard [1, Appendix I].
+This file format encapsulates one or more codestreams plus characterizing
+metadata in a contiguous sequence of binary data "boxes". The first two
+boxes of a JP2 file must be Signature and File Type specification boxes
+that uniquely identify the file as a JP2 file. This must be followed by a
+JP2 Header box that contains sub-boxes that characterize the Codestream
+box that follows with information such as the image dimensions, pixel
+datum precision, compression technique and color space mapping for image
+display purposes. The JP2 file may also contain additional boxes that
+contain UUID (universally unique identifier) signatures, URL (uniform
+resource locator) references, and XML (extended markup language)
+sequences that can be used as desired by the data provider.
+
+
+UUID List -
+
+HiRISE RDR JP2 data product files contain a UUID Information box that
+includes a UUID List box and a Data Entry URL box. The UUID List box has
+a single entry with the value (16 binary bytes here represented as a 36
+character hexadecimal string) 2b0d7e97-aa2e-317d-9133-e53161a2f7d0" which
+is a version 3 UUID signature based on the URL namespace string "
+http://hirise.lpl.arizona.edu/". This signature is intended to uniquely
+identify the JP2 file as containing a HiRISE data product. Other HiRISE
+data products, in addition to RDRs, are expected to use the same UUID.
+The Data Entry URL box contains a relative file URL string that
+identifies the external PDS label file for the data product. The
+basename of the PDS label file is expected to be the same as the
+basename of the JP2 image data file; thus for the image data file
+"TRA_000823_1720.JP2" the URL would be "TRA_000823_1720.LBL". This
+provides a reference from the image data file to the PDS label file
+containing the science metadata for the image data product. Data users
+may change filenames, of course, so the URL also ensures that the HiRISE
+observation ID - the filename without its extension and leading delimiter
+- will be provided in the JP2 file. 
+
+
+JPEG2000 Codestream -
+
+All of the information necessary to successfully decompress JPEG2000
+image data are contained in the JPEG2000 Codestream box of the JP2 file.
+The flexibility of the format, however, allows for significant
+variability in how the codestream is structured which can have a
+significant impact on the performance of client software accessing the
+codestream during rendering operations.
+
+While the JPEG2000 standard supports an exceptionally efficient lossy
+image coding technique, to ensure the preservation of the science
+information of the image data the PDS requires that only lossless image
+compression be used. Therefore HiRISE RDR image data are compressed using
+the JPEG2000 5-3 reversible transform. The JPEG2000 codestream may be
+partitioned into quality layers to enable rendering software to provide
+progressing quality displays. HiRISE RDR image data are compressed with a
+single quality layer.
+
+Perhaps the most significant data structure decision is whether to
+organize the codestream into image area tiles. Some client software may
+render full resolution image data for a relatively small display area of
+a large image more quickly if the codestream is tiled; other client
+software may render low resolution image data for the entire image more
+quickly if the codestream is not tiled. The HiRISE RDR image data are not
+tiled in the JPEG2000 codestream (the entire codestream is a single
+tile). To assist client software in locating selective sub-areas of the
+codestream called precincts, which contain codestream packets, HiRISE RDR
+image data files include Packet Length Markers (PLT) in the JPEG2000
+codestream.
+
+Another obvious data structure decision is the number of resolution
+levels to provide in the codestream. The DWT image coding technique
+naturally partitions the image information into powers of two resolution
+levels; i.e. starting with the full (1:1) resolution level the next
+resolution level will result in an image having dimensions half that of
+the full resolution image, and so forth for subsequent additional
+resolution levels. Image rendering proceeds from the lowest resolution
+level and incrementally adds image information from higher resolution
+levels; image data rendering may stop at any selected level to provide
+pixel rasters suitable for display. A maximum of 32 resolution levels are
+possible, but too many resolution levels can result in storage and
+rendering inefficiencies depending on the image dimensions. Therefore the
+number of resolution levels in HiRISE JPEG2000 codestreams is determined
+dynamically such that the minimum dimension of the image at the lowest
+resolution is not less than 64.
+
+The order in which codestream information is stored may have some affect
+on software rendering performance, depending on the intended application.
+HiRISE RDR codestreams are organized in resolution, position (image
+area), component (image band) and layer (quality) order.
+
+The JPEG2000 image coding techniques are sensitive to byte ordering (for
+multi-byte data) and signedness of the image data. HiRISE RDR image data
+are MSB ordered and unsigned.
+
+
+JPEG2000 Software -
+
+Part 5 of the JPEG2000 offers reference software implementations of the
+Part 1 core-coding standard. The JasPer Project provides a C language API
+and demonstration applications
+(http://www.ece.uvic.ca/~mdadams/jasper/).  JJ2000
+(http://jj2000.epfl.ch/) provides pure Java classes. Both of these
+implementations are employed in two J2K plugins for the Image I/O Tools
+from Sun Microsystems' Java Advanced imaging (JAI). 
+(http://java.sun.com/javase/6/docs/technotes/guides/imageio/)
+(http://java.sun.com/javase/technologies/desktop/media/jai/)
+
+Dr. David Taubman, one of the principle JPEG2000 standard developers,
+implemented the Kakadu software. Kakadu offers a full range of
+application utilities and highly optimized C++ classes
+(http://www.kakadusoftware.com/). 
+
+The JP2_Info utility, in the Image_Tools package of the PIRL Java
+Packages
+(http://pirlwww.lpl.arizona.edu/software/PIRL_Java_Packages.shtml)
+provides a detailed report on the contents of a JP2 file.
+
+
+References -
+
+1. JPEG 2000 image coding system: Core coding system, ISO/IEC 15444-1
+   September 15, 2004
+
+2. Planetary Data System Data Standards Reference, Version 3.7, JPL
+   D-7669, Part 2, March 20, 2006,
+

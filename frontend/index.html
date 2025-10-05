@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mars Imagery Explorer</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Mars Imagery Explorer</h1>
+      <p>Browse, tile, and explore HiRISE scenes like a lightweight Mars globe.</p>
+    </header>
+    <main>
+      <aside>
+        <section class="controls">
+          <button id="init-btn" class="primary">Initialise Dataset</button>
+          <div id="init-log" class="log"></div>
+        </section>
+        <section class="search">
+          <h2>Find Scenes</h2>
+          <form id="search-form">
+            <label>
+              Target code or scene ID
+              <input type="text" id="search-input" placeholder="e.g. 2620 or ESP_089206_2620_RED" />
+            </label>
+            <button type="submit">Search HiRISE Index</button>
+          </form>
+          <div id="search-results"></div>
+        </section>
+        <section class="scenes">
+          <h2>Available Scenes</h2>
+          <ul id="scene-list"></ul>
+        </section>
+      </aside>
+      <section class="viewer">
+        <div id="map-container" class="map-container map-disabled">
+          <div id="map-placeholder" class="map-placeholder">Select a scene with map data to enable geospatial view.</div>
+          <div id="map"></div>
+        </div>
+        <div class="details">
+          <div>
+            <h2 id="scene-title">Select a scene to begin</h2>
+            <p id="scene-meta"></p>
+            <div class="scene-preview">
+              <h3>Scene Preview</h3>
+              <img id="scene-preview" alt="Select a scene" />
+            </div>
+            <div class="actions">
+              <button id="download-full" disabled>Download Full Scene</button>
+            </div>
+          </div>
+          <form id="crop-form">
+            <fieldset>
+              <legend>Lat/Lon Crop</legend>
+              <div class="grid">
+                <label>
+                  Min Latitude
+                  <input type="number" step="0.0001" id="min-lat" />
+                </label>
+                <label>
+                  Min Longitude
+                  <input type="number" step="0.0001" id="min-lon" />
+                </label>
+                <label>
+                  Max Latitude
+                  <input type="number" step="0.0001" id="max-lat" />
+                </label>
+                <label>
+                  Max Longitude
+                  <input type="number" step="0.0001" id="max-lon" />
+                </label>
+              </div>
+              <button type="submit" id="crop-btn" disabled>Request Crop</button>
+            </fieldset>
+          </form>
+          <div class="crop-preview">
+            <h3>Crop Preview</h3>
+            <img id="crop-image" alt="Crop preview" />
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      crossorigin="anonymous"
+    ></script>
+    <script>
+      window.API_BASE_URL = window.API_BASE_URL || "http://localhost:8000/api";
+    </script>
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
