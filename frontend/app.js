@@ -30,11 +30,6 @@ function setupMap() {
     maxZoom: 12,
   });
 
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png", {
-    attribution: "&copy; <a href=\"https://carto.com/\">Carto</a>",
-    maxZoom: 19,
-  }).addTo(state.map);
-
   state.overlays = L.layerGroup().addTo(state.map);
   setMapAvailability(false, "Select a scene with map data to enable geospatial view.");
 }
