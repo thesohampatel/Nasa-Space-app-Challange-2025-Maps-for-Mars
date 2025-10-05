@@ -106,7 +106,8 @@ def run_converter(
 
 
 def list_manifests(data_path: Path = DATA_ROOT) -> List[Dict[str, Any]]:
-    manifests: List[Dict[str, Any]] = []
+    best_by_scene: Dict[str, Dict[str, Any]] = {}
+    orphans: List[Dict[str, Any]] = []
     for manifest_path in sorted(data_path.rglob("metadata.json")):
         try:
             data = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -122,28 +123,44 @@ def list_manifests(data_path: Path = DATA_ROOT) -> List[Dict[str, Any]]:
         for key, value in scene_info.items():
             data.setdefault(key, value)
         data["preview_available"] = bool(resolve_preview_path(data, data_path))
-        manifests.append(data)
-    return manifests
+
+        scene_id = data.get("scene_id")
+        if not scene_id:
+            orphans.append(data)
+            continue
+
+        current_best = best_by_scene.get(scene_id)
+        if current_best is None or _manifest_score(data) > _manifest_score(current_best):
+            best_by_scene[scene_id] = data
+
+    ordered = sorted(best_by_scene.values(), key=lambda item: item.get("scene_id", ""))
+    return ordered + orphans
 
 
 def load_manifest_for_scene(scene_id: str, data_path: Path = DATA_ROOT) -> Optional[Dict[str, Any]]:
+    best: Optional[Dict[str, Any]] = None
+    best_score: Optional[tuple] = None
     for manifest_path in sorted(data_path.rglob("metadata.json")):
         try:
             data = json.loads(manifest_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
         info = parse_scene_name(Path(data.get("source", manifest_path.stem)))
-        if info.get("scene_id") == scene_id:
-            data.setdefault("manifest_path", str(manifest_path))
-            data.setdefault("tiles_root_path", str(manifest_path.parent))
-            data.setdefault("tile_rows", max((t.get("row", 0) for t in data.get("tiles", [])), default=-1) + 1)
-            data.setdefault("tile_cols", max((t.get("col", 0) for t in data.get("tiles", [])), default=-1) + 1)
-            data.setdefault("tiles_count", len(data.get("tiles", [])))
-            data["bounds"] = data.get("bounds") or compute_bounds_from_manifest(data)
-            data.update(info)
-            data["preview_available"] = bool(resolve_preview_path(data, data_path))
-            return data
-    return None
+        if info.get("scene_id") != scene_id:
+            continue
+        data.setdefault("manifest_path", str(manifest_path))
+        data.setdefault("tiles_root_path", str(manifest_path.parent))
+        data.setdefault("tile_rows", max((t.get("row", 0) for t in data.get("tiles", [])), default=-1) + 1)
+        data.setdefault("tile_cols", max((t.get("col", 0) for t in data.get("tiles", [])), default=-1) + 1)
+        data.setdefault("tiles_count", len(data.get("tiles", [])))
+        data["bounds"] = data.get("bounds") or compute_bounds_from_manifest(data)
+        data.update(info)
+        data["preview_available"] = bool(resolve_preview_path(data, data_path))
+        score = _manifest_score(data)
+        if best is None or best_score is None or score > best_score:
+            best = data
+            best_score = score
+    return best
 
 
 def resolve_preview_path(manifest: Dict[str, Any], data_path: Path = DATA_ROOT) -> Optional[Path]:
@@ -187,10 +204,25 @@ def _coerce_float(value: Any) -> Optional[float]:
             return float(value["value"])
         except (TypeError, ValueError):
             return None
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            result = _coerce_float(item)
+            if result is not None:
+                return result
+        return None
     try:
         return float(str(value))
     except (TypeError, ValueError):
         return None
+
+
+def _manifest_score(manifest: Dict[str, Any]) -> tuple:
+    return (
+        1 if manifest.get("bounds") else 0,
+        1 if manifest.get("label_metadata") else 0,
+        1 if manifest.get("preview_available") else 0,
+        manifest.get("tiles_count") or len(manifest.get("tiles", [])),
+    )
 
 
 @dataclass

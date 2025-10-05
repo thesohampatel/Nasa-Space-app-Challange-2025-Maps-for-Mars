@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 import json
 import math
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -117,6 +116,13 @@ def coerce_float(value: Any) -> float:
         return float(value)
     if isinstance(value, dict) and "value" in value:
         return float(value["value"])
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            try:
+                return coerce_float(item)
+            except ValueError:
+                continue
+        raise ValueError(f"Cannot interpret numeric value from {value!r}")
     text = str(value)
     for token in text.replace(",", " ").split():
         try:
@@ -126,54 +132,30 @@ def coerce_float(value: Any) -> float:
     raise ValueError(f"Cannot interpret numeric value from {value!r}")
 
 
-@dataclass
-class SimpleProjection:
-    sample_offset: float
-    line_offset: float
-    center_lon: float
-    center_lat: float
-    map_resolution: float
+def extract_bounds(manifest: Dict[str, Any]) -> Dict[str, float]:
+    label_meta = manifest.get("label_metadata")
+    if not label_meta:
+        raise ValueError("Manifest does not include label metadata; cannot crop by lat/lon.")
+    projection = label_meta.get("projection")
+    if not projection:
+        raise ValueError("Manifest does not include projection metadata; cannot crop by lat/lon.")
+    try:
+        min_lat = coerce_float(projection.get("MINIMUM_LATITUDE"))
+        max_lat = coerce_float(projection.get("MAXIMUM_LATITUDE"))
+        west_lon = coerce_float(projection.get("WESTERNMOST_LONGITUDE"))
+        east_lon = coerce_float(projection.get("EASTERNMOST_LONGITUDE"))
+    except (TypeError, ValueError) as exc:  # pragma: no cover - defensive guard
+        raise ValueError("Projection metadata missing convertible latitude/longitude values.") from exc
 
-    @classmethod
-    def from_metadata(cls, label_meta: Dict[str, Any]) -> "SimpleProjection":
-        proj = label_meta.get("projection") if label_meta else None
-        if not proj:
-            raise ValueError("Manifest does not contain projection metadata.")
+    if None in (min_lat, max_lat, west_lon, east_lon):
+        raise ValueError("Projection metadata incomplete; cannot derive bounds.")
 
-        required = [
-            "SAMPLE_PROJECTION_OFFSET",
-            "LINE_PROJECTION_OFFSET",
-            "CENTER_LONGITUDE",
-            "CENTER_LATITUDE",
-            "MAP_RESOLUTION",
-        ]
-        missing = [key for key in required if key not in proj]
-        if missing:
-            raise ValueError(
-                "Projection metadata missing keys: " + ", ".join(missing)
-            )
-
-        return cls(
-            sample_offset=coerce_float(proj["SAMPLE_PROJECTION_OFFSET"]),
-            line_offset=coerce_float(proj["LINE_PROJECTION_OFFSET"]),
-            center_lon=coerce_float(proj["CENTER_LONGITUDE"]),
-            center_lat=coerce_float(proj["CENTER_LATITUDE"]),
-            map_resolution=coerce_float(proj["MAP_RESOLUTION"]),
-        )
-
-    @staticmethod
-    def _wrap_delta(delta: float) -> float:
-        while delta > 180.0:
-            delta -= 360.0
-        while delta < -180.0:
-            delta += 360.0
-        return delta
-
-    def lonlat_to_pixel(self, lon: float, lat: float) -> Tuple[float, float]:
-        lon_delta = self._wrap_delta(lon - self.center_lon)
-        sample = self.sample_offset + lon_delta * self.map_resolution
-        line = self.line_offset - (lat - self.center_lat) * self.map_resolution
-        return sample, line
+    return {
+        "min_lat": min(min_lat, max_lat),
+        "max_lat": max(min_lat, max_lat),
+        "west_lon": west_lon,
+        "east_lon": east_lon,
+    }
 
 
 def crop_by_latlon(
@@ -182,37 +164,49 @@ def crop_by_latlon(
     latlon_bounds: Tuple[float, float, float, float],
     output_path: Path,
 ) -> None:
-    label_meta = manifest.get("label_metadata")
-    if not label_meta:
-        raise ValueError("Manifest does not include label metadata; cannot crop by lat/lon.")
+    bounds = extract_bounds(manifest)
+    lat_span = bounds["max_lat"] - bounds["min_lat"]
+    lon_span = bounds["east_lon"] - bounds["west_lon"]
+    if lat_span <= 0 or lon_span <= 0:
+        raise ValueError("Scene metadata does not contain a valid geographic extent.")
 
-    projection = SimpleProjection.from_metadata(label_meta)
-
-    min_lat, min_lon, max_lat, max_lon = latlon_bounds
-    # Convert the four corners and derive pixel-aligned bounds.
-    px_coords = [
-        projection.lonlat_to_pixel(lon, lat)
-        for lat in (min_lat, max_lat)
-        for lon in (min_lon, max_lon)
-    ]
-
-    xs = [coord[0] for coord in px_coords]
-    ys = [coord[1] for coord in px_coords]
-
-    left = math.floor(min(xs))
-    top = math.floor(min(ys))
-    right = math.ceil(max(xs))
-    bottom = math.ceil(max(ys))
-
-    width = manifest["image_size"]["width"]
     height = manifest["image_size"]["height"]
+    width = manifest["image_size"]["width"]
 
-    left = max(0, left)
-    top = max(0, top)
-    right = min(width, right)
-    bottom = min(height, bottom)
+    req_min_lat, req_min_lon, req_max_lat, req_max_lon = latlon_bounds
+    min_lat = max(bounds["min_lat"], min(bounds["max_lat"], min(req_min_lat, req_max_lat)))
+    max_lat = max(bounds["min_lat"], min(bounds["max_lat"], max(req_min_lat, req_max_lat)))
+    min_lon = max(bounds["west_lon"], min(bounds["east_lon"], min(req_min_lon, req_max_lon)))
+    max_lon = max(bounds["west_lon"], min(bounds["east_lon"], max(req_min_lon, req_max_lon)))
 
-    compose_region(manifest, manifest_path, (left, top, right, bottom), output_path)
+    if max_lat - min_lat <= 0 or max_lon - min_lon <= 0:
+        raise ValueError("Requested crop is outside the scene bounds.")
+
+    def lat_to_y(lat: float) -> float:
+        return (bounds["max_lat"] - lat) / lat_span * height
+
+    def lon_to_x(lon: float) -> float:
+        return (lon - bounds["west_lon"]) / lon_span * width
+
+    top = lat_to_y(max_lat)
+    bottom = lat_to_y(min_lat)
+    left = lon_to_x(min_lon)
+    right = lon_to_x(max_lon)
+
+    left = max(0.0, min(width, left))
+    right = max(0.0, min(width, right))
+    top = max(0.0, min(height, top))
+    bottom = max(0.0, min(height, bottom))
+
+    left_i = math.floor(left)
+    top_i = math.floor(top)
+    right_i = math.ceil(right)
+    bottom_i = math.ceil(bottom)
+
+    if left_i >= right_i or top_i >= bottom_i:
+        raise ValueError("Requested bounds yield an empty region.")
+
+    compose_region(manifest, manifest_path, (left_i, top_i, right_i, bottom_i), output_path)
 
 
 def parse_args() -> argparse.Namespace:

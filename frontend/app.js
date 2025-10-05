@@ -214,6 +214,7 @@ function plotScene(scene) {
   const sw = [scene.bounds.min_lat, scene.bounds.west_lon];
   const ne = [scene.bounds.max_lat, scene.bounds.east_lon];
   state.map.fitBounds([sw, ne], { padding: [20, 20] });
+  setTimeout(() => state.map.invalidateSize(), 60);
 }
 
 async function loadScenePreview(scene) {
